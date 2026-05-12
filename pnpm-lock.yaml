@@ -98,6 +98,37 @@ importers:
         specifier: ^3.0.9
         version: 3.1.1(@types/node@22.13.14)(@vitest/ui@3.0.9)(jiti@2.4.2)(jsdom@26.0.0)(yaml@2.7.1)
 
+  examples/with-azure-keyvault:
+    dependencies:
+      '@kubricate/plugin-azure-keyvault':
+        specifier: workspace:*
+        version: link:../../packages/plugin-azure-keyvault
+      '@kubricate/plugin-kubernetes':
+        specifier: ^0.22.0
+        version: 0.22.0(@kubricate/core@0.22.0)
+      '@kubricate/stacks':
+        specifier: ^0.22.0
+        version: 0.22.0(@kubernetes-models/base@5.0.1)
+      kubernetes-models:
+        specifier: ^4.4.2
+        version: 4.4.2
+      kubricate:
+        specifier: ^0.22.0
+        version: 0.22.0
+    devDependencies:
+      '@kubricate/config-eslint':
+        specifier: workspace:*
+        version: link:../../configs/config-eslint
+      '@kubricate/config-typescript':
+        specifier: workspace:*
+        version: link:../../configs/config-typescript
+      '@kubricate/mono':
+        specifier: workspace:*
+        version: link:../../tools/mono
+      '@types/node':
+        specifier: ^22.13.9
+        version: 22.13.14
+
   examples/with-secret-manager:
     dependencies:
       '@kubricate/core':
