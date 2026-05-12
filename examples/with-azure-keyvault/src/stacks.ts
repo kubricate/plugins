@@ -1,5 +1,6 @@
 import { namespaceTemplate, simpleAppTemplate } from '@kubricate/stacks';
 import { Stack } from 'kubricate';
+
 import { secretManager } from './setup-secrets.js';
 
 const namespace = Stack.fromTemplate(namespaceTemplate, { name: 'my-namespace' });

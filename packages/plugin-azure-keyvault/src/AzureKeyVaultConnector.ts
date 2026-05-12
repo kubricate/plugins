@@ -1,5 +1,6 @@
 import { DefaultAzureCredential, type TokenCredential } from '@azure/identity';
 import { SecretClient } from '@azure/keyvault-secrets';
+
 import type { BaseConnector, BaseLogger, SecretValue } from '@kubricate/core';
 
 export interface AzureKeyVaultConnectorConfig {

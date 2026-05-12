@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AzureKeyVaultConnector } from './AzureKeyVaultConnector.js';
+
 vi.mock('@azure/identity', () => ({
   DefaultAzureCredential: vi.fn().mockImplementation(() => ({})),
 }));
@@ -10,8 +12,6 @@ vi.mock('@azure/keyvault-secrets', () => ({
     getSecret: mockGetSecret,
   })),
 }));
-
-import { AzureKeyVaultConnector } from './AzureKeyVaultConnector.js';
 
 describe('AzureKeyVaultConnector', () => {
   beforeEach(() => {
