@@ -1,0 +1,16 @@
+reviews:
+  profile: chill
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: 
+      - main
+      - develop
+  tools:
+    github-checks:
+      enabled: true
+    eslint:
+      enabled: true
+    gitleaks:
+      enabled: true
