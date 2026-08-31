@@ -9,3 +9,7 @@
 <p align="center">
   <a href="https://github.com/kubricate/kubricate">kubricate</a> plugins for 3rd party platforms to support Kubricate
 </p>
+
+# Plugins
+
+- Azure Keyvault
