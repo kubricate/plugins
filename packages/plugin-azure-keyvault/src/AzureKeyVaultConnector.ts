@@ -3,10 +3,12 @@ import { SecretClient } from '@azure/keyvault-secrets';
 
 import type { BaseConnector, BaseLogger, SecretValue } from '@kubricate/core';
 
+import { AzureKeyVaultNameConverter } from './AzureKeyVaultNameConverter.js';
+
 export interface AzureKeyVaultConnectorConfig {
   /** Full vault URL, e.g. https://my-vault.vault.azure.net/ */
   vaultUrl: string;
-  /** Optional prefix prepended to every secret name before Key Vault lookup */
+  /** Optional prefix prepended to every secret name before Key Vault lookup, e.g. `sample1-dev` */
   prefix?: string;
   /** Optional credential; defaults to new DefaultAzureCredential() */
   credential?: TokenCredential;
@@ -17,9 +19,11 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
   public logger?: BaseLogger;
   private secrets = new Map<string, SecretValue>();
   private client?: SecretClient;
+  private nameConverter: AzureKeyVaultNameConverter;
 
   constructor(config: AzureKeyVaultConnectorConfig) {
     this.config = config;
+    this.nameConverter = new AzureKeyVaultNameConverter({ prefix: config.prefix });
   }
 
   private getClient(): SecretClient {
@@ -30,12 +34,35 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
     return this.client;
   }
 
-  async load(names: string[]): Promise<void> {
-    const client = this.getClient();
-    const prefix = this.config.prefix ?? '';
+  /**
+   * Resolve every name up-front, so keys that collapse to the same Key Vault name
+   * (e.g. `APISERVER` and `ApiServer` both become `apiserver`) fail before any request.
+   * Keying by secret name also deduplicates a key that was listed more than once.
+   *
+   * @returns Key Vault secret name -> the application key it was resolved from.
+   */
+  private resolveSecretNames(names: string[]): Map<string, string> {
+    const nameBySecretName = new Map<string, string>();
 
     for (const name of names) {
-      const lookupName = prefix + name;
+      const secretName = this.nameConverter.toSecretName(name);
+      const owner = nameBySecretName.get(secretName);
+      if (owner && owner !== name) {
+        throw new Error(
+          `Secrets '${owner}' and '${name}' both resolve to the Key Vault name '${secretName}'. Rename one of them.`
+        );
+      }
+      nameBySecretName.set(secretName, name);
+    }
+
+    return nameBySecretName;
+  }
+
+  async load(names: string[]): Promise<void> {
+    const nameBySecretName = this.resolveSecretNames(names);
+    const client = this.getClient();
+
+    for (const [lookupName, name] of nameBySecretName) {
       this.logger?.debug(`Loading secret: ${lookupName}`);
       try {
         const result = await client.getSecret(lookupName);
@@ -43,7 +70,9 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
         this.logger?.debug(`Loaded secret: ${name}`);
       } catch (err: unknown) {
         if (isRestError(err) && err.statusCode === 404) {
-          throw new Error(`Secret '${name}' not found in Key Vault ${this.config.vaultUrl}`);
+          throw new Error(
+            `Secret '${lookupName}' not found in Key Vault ${this.config.vaultUrl} (resolved from '${name}')`
+          );
         }
         throw err;
       }

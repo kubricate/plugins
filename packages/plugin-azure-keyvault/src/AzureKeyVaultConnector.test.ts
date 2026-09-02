@@ -25,15 +25,79 @@ describe('AzureKeyVaultConnector', () => {
     expect(connector.get('DB')).toBe('myvalue');
   });
 
-  it('prefix handling — getSecret is called with prefixed name', async () => {
+  it('prefix handling — getSecret is called with the converted, prefixed name', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'sample1-dev',
+    });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('sample1-dev-my-db-password');
+    expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
+  });
+
+  it('no prefix — getSecret is called with the converted name', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('my-db-password');
+    expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
+  });
+
+  it('legacy slash-suffixed prefix prod/ — getSecret is called with a valid Key Vault name', async () => {
     mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
     const connector = new AzureKeyVaultConnector({
       vaultUrl: 'https://my-vault.vault.azure.net/',
       prefix: 'prod/',
     });
-    await connector.load(['DB']);
-    expect(mockGetSecret).toHaveBeenCalledWith('prod/DB');
-    expect(connector.get('DB')).toBe('dbpassword');
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('prod-my-db-password');
+    expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
+  });
+
+  it('prefix normalization — an upper snake case prefix resolves to kebab case', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'SAMPLE1_DEV',
+    });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('sample1-dev-my-db-password');
+  });
+
+  it('separator-less names — getSecret is called without word splitting', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'somevalue' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'smoi-cms-dev',
+    });
+    await connector.load(['APISERVER', 'DefaultConnection']);
+    expect(mockGetSecret).toHaveBeenCalledWith('smoi-cms-dev-apiserver');
+    expect(mockGetSecret).toHaveBeenCalledWith('smoi-cms-dev-defaultconnection');
+    expect(connector.get('DefaultConnection')).toBe('somevalue');
+  });
+
+  it('colliding names — load rejects before any Key Vault request', async () => {
+    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
+    await expect(connector.load(['APISERVER', 'ApiServer'])).rejects.toThrow(
+      "Secrets 'APISERVER' and 'ApiServer' both resolve to the Key Vault name 'apiserver'"
+    );
+    expect(mockGetSecret).not.toHaveBeenCalled();
+  });
+
+  it('colliding names via separators — MY_DB_PASSWORD and MY__DB__PASSWORD are rejected', async () => {
+    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
+    await expect(connector.load(['MY_DB_PASSWORD', 'MY__DB__PASSWORD'])).rejects.toThrow(
+      'both resolve to the Key Vault name'
+    );
+  });
+
+  it('repeated identical names — are deduplicated instead of treated as a collision', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'myvalue' });
+    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
+    await connector.load(['DB', 'DB']);
+    expect(mockGetSecret).toHaveBeenCalledTimes(1);
+    expect(connector.get('DB')).toBe('myvalue');
   });
 
   it('404 error — load rejects with "not found in Key Vault"', async () => {

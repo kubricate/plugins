@@ -7,7 +7,8 @@ export const secretManager = new SecretManager()
     'AzureKeyVaultConnector',
     new AzureKeyVaultConnector({
       vaultUrl: 'https://my-vault.vault.azure.net/',
-      // prefix: 'myapp/',
+      // prefix: 'sample1-dev', // MY_DB_PASSWORD -> sample1-dev-my-db-password
+      // prefix: 'prod/', // MY_DB_PASSWORD -> prod-my-db-password
       // credential: new ClientSecretCredential(tenantId, clientId, clientSecret),
     })
   )
