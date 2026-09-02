@@ -13,6 +13,12 @@ vi.mock('@azure/keyvault-secrets', () => ({
   })),
 }));
 
+/** The kebab-case convention documented in `examples/with-azure-keyvault`. */
+const kebabCase = (name: string, prefix: string) => {
+  const normalized = name.toLowerCase().replace(/_/g, '-');
+  return prefix ? `${prefix}-${normalized}` : normalized;
+};
+
 describe('AzureKeyVaultConnector', () => {
   beforeEach(() => {
     mockGetSecret.mockReset();
@@ -25,85 +31,173 @@ describe('AzureKeyVaultConnector', () => {
     expect(connector.get('DB')).toBe('myvalue');
   });
 
-  it('prefix handling — getSecret is called with the converted, prefixed name', async () => {
-    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
-    const connector = new AzureKeyVaultConnector({
-      vaultUrl: 'https://my-vault.vault.azure.net/',
-      prefix: 'sample1-dev',
-    });
-    await connector.load(['MY_DB_PASSWORD']);
-    expect(mockGetSecret).toHaveBeenCalledWith('sample1-dev-my-db-password');
-    expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
-  });
-
-  it('no prefix — getSecret is called with the converted name', async () => {
+  it('no prefix and no resolver — the key is queried verbatim', async () => {
     mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
     const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
     await connector.load(['MY_DB_PASSWORD']);
-    expect(mockGetSecret).toHaveBeenCalledWith('my-db-password');
+    expect(mockGetSecret).toHaveBeenCalledWith('MY_DB_PASSWORD');
     expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
   });
 
-  it('legacy slash-suffixed prefix prod/ — getSecret is called with a valid Key Vault name', async () => {
+  it('prefix without resolver — is concatenated onto the key unchanged (legacy behavior)', async () => {
     mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
     const connector = new AzureKeyVaultConnector({
       vaultUrl: 'https://my-vault.vault.azure.net/',
-      prefix: 'prod/',
+      prefix: 'prod-',
     });
     await connector.load(['MY_DB_PASSWORD']);
-    expect(mockGetSecret).toHaveBeenCalledWith('prod-my-db-password');
+    expect(mockGetSecret).toHaveBeenCalledWith('prod-MY_DB_PASSWORD');
     expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
   });
 
-  it('prefix normalization — an upper snake case prefix resolves to kebab case', async () => {
-    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+  it('prefix mutated after construction — load uses the current config value', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dburl' });
     const connector = new AzureKeyVaultConnector({
       vaultUrl: 'https://my-vault.vault.azure.net/',
-      prefix: 'SAMPLE1_DEV',
+      prefix: 'dev-',
     });
-    await connector.load(['MY_DB_PASSWORD']);
-    expect(mockGetSecret).toHaveBeenCalledWith('sample1-dev-my-db-password');
+    connector.config.prefix = 'prod-';
+    await connector.load(['DATABASE_URL']);
+    expect(mockGetSecret).toHaveBeenCalledWith('prod-DATABASE_URL');
   });
 
-  it('separator-less names — getSecret is called without word splitting', async () => {
-    mockGetSecret.mockResolvedValue({ value: 'somevalue' });
-    const connector = new AzureKeyVaultConnector({
-      vaultUrl: 'https://my-vault.vault.azure.net/',
-      prefix: 'smoi-cms-dev',
-    });
-    await connector.load(['APISERVER', 'DefaultConnection']);
-    expect(mockGetSecret).toHaveBeenCalledWith('smoi-cms-dev-apiserver');
-    expect(mockGetSecret).toHaveBeenCalledWith('smoi-cms-dev-defaultconnection');
-    expect(connector.get('DefaultConnection')).toBe('somevalue');
-  });
-
-  it('colliding names — load rejects before any Key Vault request', async () => {
-    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
-    await expect(connector.load(['APISERVER', 'ApiServer'])).rejects.toThrow(
-      "Secrets 'APISERVER' and 'ApiServer' both resolve to the Key Vault name 'apiserver'"
-    );
-    expect(mockGetSecret).not.toHaveBeenCalled();
-  });
-
-  it('colliding names via separators — MY_DB_PASSWORD and MY__DB__PASSWORD are rejected', async () => {
-    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
-    await expect(connector.load(['MY_DB_PASSWORD', 'MY__DB__PASSWORD'])).rejects.toThrow(
-      'both resolve to the Key Vault name'
-    );
-  });
-
-  it('repeated identical names — are deduplicated instead of treated as a collision', async () => {
+  it('repeated identical names — are deduplicated into a single request', async () => {
     mockGetSecret.mockResolvedValue({ value: 'myvalue' });
     const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
     await connector.load(['DB', 'DB']);
+    expect(mockGetSecret).toHaveBeenCalledWith('DB');
     expect(mockGetSecret).toHaveBeenCalledTimes(1);
     expect(connector.get('DB')).toBe('myvalue');
   });
 
-  it('404 error — load rejects with "not found in Key Vault"', async () => {
+  it('resolveSecretName — owns the whole Key Vault name', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => `custom-${name}`,
+    });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('custom-MY_DB_PASSWORD');
+    expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
+  });
+
+  it('resolveSecretName — receives the configured prefix as its second argument', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'sample1-dev',
+      resolveSecretName: kebabCase,
+    });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('sample1-dev-my-db-password');
+    expect(connector.get('MY_DB_PASSWORD')).toBe('dbpassword');
+  });
+
+  it('resolveSecretName — receives an empty prefix when none is configured', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const seen: string[] = [];
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: (name, prefix) => {
+        seen.push(prefix);
+        return kebabCase(name, prefix);
+      },
+    });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(seen).toEqual(['']);
+    expect(mockGetSecret).toHaveBeenCalledWith('my-db-password');
+  });
+
+  it('resolveSecretName — may declare only name and ignore the prefix', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'sample1-dev',
+      resolveSecretName: name => name.toLowerCase(),
+    });
+    await connector.load(['MY_DB_PASSWORD']);
+    expect(mockGetSecret).toHaveBeenCalledWith('my_db_password');
+  });
+
+  it('resolved-name collision — load rejects before any Key Vault request', async () => {
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => name.toLowerCase(),
+    });
+    await expect(connector.load(['APISERVER', 'ApiServer'])).rejects.toThrow(
+      "Secret name collision: 'APISERVER' and 'ApiServer' both resolve to 'apiserver'"
+    );
+    expect(mockGetSecret).not.toHaveBeenCalled();
+  });
+
+  it('resolveSecretName throws — nothing is fetched, even for keys resolved earlier', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => {
+        if (name === 'SECOND') throw new Error('rejected by convention');
+        return name.toLowerCase();
+      },
+    });
+    await expect(connector.load(['FIRST', 'SECOND'])).rejects.toThrow('rejected by convention');
+    expect(mockGetSecret).not.toHaveBeenCalled();
+  });
+
+  it('404 error — reports the queried Key Vault name and the application key', async () => {
     mockGetSecret.mockRejectedValue({ statusCode: 404 });
-    const connector = new AzureKeyVaultConnector({ vaultUrl: 'https://my-vault.vault.azure.net/' });
-    await expect(connector.load(['MISSING'])).rejects.toThrow('not found in Key Vault');
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'sample1-dev',
+      resolveSecretName: kebabCase,
+    });
+    await expect(connector.load(['MY_DB_PASSWORD'])).rejects.toThrow(
+      "Secret 'sample1-dev-my-db-password' not found in Key Vault https://my-vault.vault.azure.net/ (resolved from 'MY_DB_PASSWORD')"
+    );
+  });
+
+  it('resolveSecretName — uses the current prefix when config is mutated', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
+
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'dev',
+      resolveSecretName: kebabCase,
+    });
+
+    connector.config.prefix = 'prod';
+
+    await connector.load(['MY_DB_PASSWORD']);
+
+    expect(mockGetSecret).toHaveBeenCalledWith('prod-my-db-password');
+  });
+
+  it('multiple names — stores values under their original application keys', async () => {
+    mockGetSecret.mockResolvedValueOnce({ value: 'user-secret' }).mockResolvedValueOnce({ value: 'pass-secret' });
+
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      prefix: 'prod',
+      resolveSecretName: kebabCase,
+    });
+
+    await connector.load(['DB_USER', 'DB_PASSWORD']);
+
+    expect(mockGetSecret).toHaveBeenNthCalledWith(1, 'prod-db-user');
+
+    expect(mockGetSecret).toHaveBeenNthCalledWith(2, 'prod-db-password');
+
+    expect(connector.get('DB_USER')).toBe('user-secret');
+    expect(connector.get('DB_PASSWORD')).toBe('pass-secret');
+  });
+
+  it('empty names — performs no Key Vault requests', async () => {
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+    });
+
+    await connector.load([]);
+
+    expect(mockGetSecret).not.toHaveBeenCalled();
   });
 
   it('JSON-parse flat object — get returns parsed object', async () => {

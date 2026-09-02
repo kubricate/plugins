@@ -3,15 +3,36 @@ import { SecretClient } from '@azure/keyvault-secrets';
 
 import type { BaseConnector, BaseLogger, SecretValue } from '@kubricate/core';
 
-import { AzureKeyVaultNameConverter } from './AzureKeyVaultNameConverter.js';
-
 export interface AzureKeyVaultConnectorConfig {
   /** Full vault URL, e.g. https://my-vault.vault.azure.net/ */
   vaultUrl: string;
-  /** Optional prefix prepended to every secret name before Key Vault lookup, e.g. `sample1-dev` */
+  /**
+   * Optional prefix prepended directly to every secret name before Key Vault lookup, so
+   * `prod-` resolves `MY_DB_PASSWORD` to `prod-MY_DB_PASSWORD`. When
+   * {@link AzureKeyVaultConnectorConfig.resolveSecretName} is set it receives this as its
+   * second argument instead and decides where the prefix goes.
+   */
   prefix?: string;
   /** Optional credential; defaults to new DefaultAzureCredential() */
   credential?: TokenCredential;
+  /**
+   * Optional transform from application key to Key Vault secret name, replacing the
+   * default `prefix + name` concatenation. The resolver owns the whole name, including
+   * where `prefix` goes, which is handed in as the second argument (`''` when unset).
+   * Declare only `name` to ignore the prefix.
+   *
+   * The connector imposes no naming convention of its own, so any lowercasing or `_` to
+   * `-` conversion belongs here.
+   *
+   * @example
+   * ```ts
+   * resolveSecretName: (name, prefix) => {
+   *   const normalized = name.toLowerCase().replace(/_/g, '-');
+   *   return prefix ? `${prefix}-${normalized}` : normalized;
+   * }
+   * ```
+   */
+  resolveSecretName?: (name: string, prefix: string) => string;
 }
 
 export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnectorConfig> {
@@ -19,11 +40,9 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
   public logger?: BaseLogger;
   private secrets = new Map<string, SecretValue>();
   private client?: SecretClient;
-  private nameConverter: AzureKeyVaultNameConverter;
 
   constructor(config: AzureKeyVaultConnectorConfig) {
     this.config = config;
-    this.nameConverter = new AzureKeyVaultNameConverter({ prefix: config.prefix });
   }
 
   private getClient(): SecretClient {
@@ -35,34 +54,42 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
   }
 
   /**
-   * Resolve every name up-front, so keys that collapse to the same Key Vault name
-   * (e.g. `APISERVER` and `ApiServer` both become `apiserver`) fail before any request.
-   * Keying by secret name also deduplicates a key that was listed more than once.
-   *
-   * @returns Key Vault secret name -> the application key it was resolved from.
+   * Read `config` on every call rather than capturing it in the constructor, so mutating
+   * `connector.config.prefix` after construction still takes effect.
    */
-  private resolveSecretNames(names: string[]): Map<string, string> {
-    const nameBySecretName = new Map<string, string>();
+  private resolveName(name: string): string {
+    const { prefix = '', resolveSecretName } = this.config;
+    return resolveSecretName ? resolveSecretName(name, prefix) : prefix + name;
+  }
 
-    for (const name of names) {
-      const secretName = this.nameConverter.toSecretName(name);
-      const owner = nameBySecretName.get(secretName);
-      if (owner && owner !== name) {
-        throw new Error(
-          `Secrets '${owner}' and '${name}' both resolve to the Key Vault name '${secretName}'. Rename one of them.`
-        );
+  /**
+   * Resolve every key before the first request, so a resolver that rejects one key leaves
+   * nothing half-loaded. Repeating a key collapses into a single lookup, while two
+   * distinct keys landing on the same Key Vault name (e.g. `APISERVER` and `ApiServer`
+   * under a lowercasing resolver) is a configuration error rather than a shared secret.
+   *
+   * @returns pairs of Key Vault secret name and the application key it was resolved from.
+   */
+  private resolveLookups(names: string[]): Array<readonly [string, string]> {
+    const nameByLookup = new Map<string, string>();
+
+    for (const name of new Set(names)) {
+      const lookupName = this.resolveName(name);
+      const existing = nameByLookup.get(lookupName);
+      if (existing !== undefined) {
+        throw new Error(`Secret name collision: '${existing}' and '${name}' both resolve to '${lookupName}'`);
       }
-      nameBySecretName.set(secretName, name);
+      nameByLookup.set(lookupName, name);
     }
 
-    return nameBySecretName;
+    return [...nameByLookup.entries()];
   }
 
   async load(names: string[]): Promise<void> {
-    const nameBySecretName = this.resolveSecretNames(names);
+    const lookups = this.resolveLookups(names);
     const client = this.getClient();
 
-    for (const [lookupName, name] of nameBySecretName) {
+    for (const [lookupName, name] of lookups) {
       this.logger?.debug(`Loading secret: ${lookupName}`);
       try {
         const result = await client.getSecret(lookupName);
