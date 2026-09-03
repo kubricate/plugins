@@ -130,6 +130,31 @@ describe('AzureKeyVaultConnector', () => {
     expect(mockGetSecret).not.toHaveBeenCalled();
   });
 
+  it('resolved-name collision across separate load calls — rejects on the second key', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'somevalue' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => name.toLowerCase(),
+    });
+    // Kubricate's orchestrator loads one name per call, so a collision only ever spans calls.
+    await connector.load(['APISERVER']);
+    await expect(connector.load(['ApiServer'])).rejects.toThrow(
+      "Secret name collision: 'APISERVER' and 'ApiServer' both resolve to 'apiserver'"
+    );
+    expect(mockGetSecret).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloading the same key — is not mistaken for a collision', async () => {
+    mockGetSecret.mockResolvedValue({ value: 'myvalue' });
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => name.toLowerCase(),
+    });
+    await connector.load(['DB']);
+    await expect(connector.load(['DB'])).resolves.toBeUndefined();
+    expect(connector.get('DB')).toBe('myvalue');
+  });
+
   it('resolveSecretName throws — nothing is fetched, even for keys resolved earlier', async () => {
     mockGetSecret.mockResolvedValue({ value: 'dbpassword' });
     const connector = new AzureKeyVaultConnector({
@@ -141,6 +166,55 @@ describe('AzureKeyVaultConnector', () => {
     });
     await expect(connector.load(['FIRST', 'SECOND'])).rejects.toThrow('rejected by convention');
     expect(mockGetSecret).not.toHaveBeenCalled();
+  });
+
+  it('failed Key Vault load — leaves the resolved name free for another key', async () => {
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: () => 'shared-name',
+    });
+
+    mockGetSecret.mockRejectedValueOnce({ statusCode: 404 });
+    await expect(connector.load(['FIRST'])).rejects.toThrow('not found in Key Vault');
+
+    // 'FIRST' never loaded, so it must not have reserved 'shared-name'.
+    mockGetSecret.mockResolvedValueOnce({ value: 'secret' });
+    await expect(connector.load(['SECOND'])).resolves.toBeUndefined();
+    expect(connector.get('SECOND')).toBe('secret');
+  });
+
+  it('resolver failure — leaves names resolved earlier in the batch unclaimed', async () => {
+    let rejectSecond = true;
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => {
+        if (name === 'SECOND' && rejectSecond) throw new Error('rejected by convention');
+        return name.toLowerCase();
+      },
+    });
+
+    await expect(connector.load(['FIRST', 'SECOND'])).rejects.toThrow('rejected by convention');
+    expect(mockGetSecret).not.toHaveBeenCalled();
+
+    // 'FIRST' resolved to 'first' before the throw but was never fetched.
+    rejectSecond = false;
+    mockGetSecret.mockResolvedValue({ value: 'secret' });
+    await expect(connector.load(['First'])).resolves.toBeUndefined();
+    expect(mockGetSecret).toHaveBeenCalledWith('first');
+  });
+
+  it('non-404 failure — also leaves the resolved name unclaimed', async () => {
+    const connector = new AzureKeyVaultConnector({
+      vaultUrl: 'https://my-vault.vault.azure.net/',
+      resolveSecretName: name => name.toLowerCase(),
+    });
+
+    mockGetSecret.mockRejectedValueOnce(new Error('auth failed'));
+    await expect(connector.load(['APISERVER'])).rejects.toThrow('auth failed');
+
+    mockGetSecret.mockResolvedValueOnce({ value: 'secret' });
+    await expect(connector.load(['ApiServer'])).resolves.toBeUndefined();
+    expect(connector.get('ApiServer')).toBe('secret');
   });
 
   it('404 error — reports the queried Key Vault name and the application key', async () => {

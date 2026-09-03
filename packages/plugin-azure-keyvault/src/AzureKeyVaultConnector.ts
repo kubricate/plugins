@@ -40,6 +40,14 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
   public logger?: BaseLogger;
   private secrets = new Map<string, SecretValue>();
   private client?: SecretClient;
+  /**
+   * Key Vault secret name -> the application key that successfully fetched it, across
+   * every `load()` call. Kubricate's orchestrator loads one name per call, so collisions
+   * are only ever visible to the connector instance, never within a single call.
+   *
+   * Only fetched secrets are recorded: a key whose load failed never reserves a name.
+   */
+  private lookupOwners = new Map<string, string>();
 
   constructor(config: AzureKeyVaultConnectorConfig) {
     this.config = config;
@@ -63,10 +71,14 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
   }
 
   /**
-   * Resolve every key before the first request, so a resolver that rejects one key leaves
-   * nothing half-loaded. Repeating a key collapses into a single lookup, while two
-   * distinct keys landing on the same Key Vault name (e.g. `APISERVER` and `ApiServer`
-   * under a lowercasing resolver) is a configuration error rather than a shared secret.
+   * Resolve and validate every key before the first request, so a resolver that rejects
+   * one key leaves nothing half-loaded. Repeating a key collapses into a single lookup,
+   * while two distinct keys landing on the same Key Vault name (e.g. `APISERVER` and
+   * `ApiServer` under a lowercasing resolver) is a configuration error rather than a
+   * shared secret.
+   *
+   * Purely a validation step: ownership is claimed in {@link AzureKeyVaultConnector.load}
+   * once the secret is actually fetched.
    *
    * @returns pairs of Key Vault secret name and the application key it was resolved from.
    */
@@ -75,9 +87,11 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
 
     for (const name of new Set(names)) {
       const lookupName = this.resolveName(name);
-      const existing = nameByLookup.get(lookupName);
-      if (existing !== undefined) {
-        throw new Error(`Secret name collision: '${existing}' and '${name}' both resolve to '${lookupName}'`);
+      // Input is unique after the Set, so a hit within this batch is always a different
+      // key, whereas a hit from an earlier load() may legitimately be this same key.
+      const owner = nameByLookup.get(lookupName) ?? this.lookupOwners.get(lookupName);
+      if (owner !== undefined && owner !== name) {
+        throw new Error(`Secret name collision: '${owner}' and '${name}' both resolve to '${lookupName}'`);
       }
       nameByLookup.set(lookupName, name);
     }
@@ -94,6 +108,8 @@ export class AzureKeyVaultConnector implements BaseConnector<AzureKeyVaultConnec
       try {
         const result = await client.getSecret(lookupName);
         this.secrets.set(name, this.tryParseSecretValue(result.value ?? ''));
+        // Claim the name only now, so a failed load leaves it free for another key.
+        this.lookupOwners.set(lookupName, name);
         this.logger?.debug(`Loaded secret: ${name}`);
       } catch (err: unknown) {
         if (isRestError(err) && err.statusCode === 404) {
