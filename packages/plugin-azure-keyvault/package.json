@@ -1,0 +1,44 @@
+{
+  "name": "@kubricate/plugin-azure-keyvault",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/dts/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/dts/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/cjs/index.js"
+    }
+  },
+  "files": ["dist", "src", "package.json", "README.md"],
+  "scripts": {
+    "dev": "mono dev",
+    "build": "mono build",
+    "test": "mono test",
+    "test:watch": "mono test:watch",
+    "lint:check": "mono lint:check",
+    "lint:fix": "mono lint:fix",
+    "check-types": "mono check-types"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.6.0",
+    "@azure/keyvault-secrets": "^4.9.0"
+  },
+  "peerDependencies": {
+    "@kubricate/core": "^0.22.0"
+  },
+  "devDependencies": {
+    "@kubricate/config-eslint": "workspace:*",
+    "@kubricate/config-typescript": "workspace:*",
+    "@kubricate/config-vitest": "workspace:*",
+    "@kubricate/core": "^0.22.0",
+    "@kubricate/mono": "workspace:*",
+    "@types/node": "^22.13.9"
+  },
+  "description": "Azure Key Vault connector plugin for Kubricate secret management.",
+  "keywords": ["kubernetes", "kubricate", "azure", "keyvault", "secret-management"],
+  "license": "Apache-2.0"
+}
