@@ -129,46 +129,6 @@ importers:
         specifier: ^22.13.9
         version: 22.13.14
 
-  examples/with-secret-manager:
-    dependencies:
-      '@kubricate/core':
-        specifier: ^0.22.0
-        version: 0.22.0
-      '@kubricate/kubernetes-models':
-        specifier: ^0.1.2
-        version: 0.1.2
-      '@kubricate/plugin-env':
-        specifier: ^0.22.0
-        version: 0.22.0(@kubricate/core@0.22.0)
-      '@kubricate/plugin-kubernetes':
-        specifier: ^0.22.0
-        version: 0.22.0(@kubricate/core@0.22.0)
-      '@kubricate/stacks':
-        specifier: ^0.22.0
-        version: 0.22.0(@kubernetes-models/base@5.0.1)
-      kubernetes-models:
-        specifier: ^4.4.2
-        version: 4.4.2
-      kubricate:
-        specifier: ^0.22.0
-        version: 0.22.0
-    devDependencies:
-      '@kubernetes-models/base':
-        specifier: ^5.0.1
-        version: 5.0.1
-      '@kubricate/config-eslint':
-        specifier: workspace:*
-        version: link:../../configs/config-eslint
-      '@kubricate/config-typescript':
-        specifier: workspace:*
-        version: link:../../configs/config-typescript
-      '@kubricate/config-vitest':
-        specifier: workspace:*
-        version: link:../../configs/config-vitest
-      '@kubricate/mono':
-        specifier: workspace:*
-        version: link:../../tools/mono
-
   packages/plugin-azure-keyvault:
     dependencies:
       '@azure/identity':
@@ -753,11 +713,6 @@ packages:
 
   '@kubricate/kubernetes-models@0.1.2':
     resolution: {integrity: sha512-vYPOVc4lP1ed1lX6PxfjaocJNckWh8K3uFzIVelRY/6/Lc7umz67VKJCEkdHIcZJzgyw5IXw6GfRnvuEbc1ZPg==}
-
-  '@kubricate/plugin-env@0.22.0':
-    resolution: {integrity: sha512-nwu9/XQYVfPbL3jSGAN2WaZiMpuvq2SGelT4gq55OWmC88qmLFYVDswmyqTTVB+LnovZzlsBznrV0IWsDFJEyg==}
-    peerDependencies:
-      '@kubricate/core': ^0.22.0
 
   '@kubricate/plugin-kubernetes@0.22.0':
     resolution: {integrity: sha512-P/v9Rztsu70izt0RIEB2sTn9BP37QWFUGIj9sm0uN3YchL/uUSgKlZhQH0C+AyKkEDN115uuK6aTVKeeUyMJ9w==}
@@ -1425,10 +1380,6 @@ packages:
 
   dotenv@16.0.3:
     resolution: {integrity: sha512-7GO6HghkA5fYG9TYnNxi14/7K9f5occMlp3zXAuSxn7CKCxt9xbNWG7yF8hTCSUchlfWSe3uLmlPfigevRItzQ==}
-    engines: {node: '>=12'}
-
-  dotenv@16.4.7:
-    resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
     engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
@@ -3979,11 +3930,6 @@ snapshots:
 
   '@kubricate/kubernetes-models@0.1.2': {}
 
-  '@kubricate/plugin-env@0.22.0(@kubricate/core@0.22.0)':
-    dependencies:
-      '@kubricate/core': 0.22.0
-      dotenv: 16.4.7
-
   '@kubricate/plugin-kubernetes@0.22.0(@kubricate/core@0.22.0)':
     dependencies:
       '@kubricate/core': 0.22.0
@@ -4693,8 +4639,6 @@ snapshots:
   discontinuous-range@1.0.0: {}
 
   dotenv@16.0.3: {}
-
-  dotenv@16.4.7: {}
 
   dunder-proto@1.0.1:
     dependencies:

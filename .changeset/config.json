@@ -7,7 +7,6 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@examples/*",
-    "@kubricate/tests"
+    "@examples/*"
   ]
 }
