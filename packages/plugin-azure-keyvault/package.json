@@ -1,6 +1,6 @@
 {
   "name": "@kubricate/plugin-azure-keyvault",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -13,7 +13,12 @@
       "default": "./dist/cjs/index.js"
     }
   },
-  "files": ["dist", "src", "package.json", "README.md"],
+  "files": [
+    "dist",
+    "src",
+    "package.json",
+    "README.md"
+  ],
   "scripts": {
     "dev": "mono dev",
     "build": "mono build",
@@ -39,6 +44,12 @@
     "@types/node": "^22.13.9"
   },
   "description": "Azure Key Vault connector plugin for Kubricate secret management.",
-  "keywords": ["kubernetes", "kubricate", "azure", "keyvault", "secret-management"],
+  "keywords": [
+    "kubernetes",
+    "kubricate",
+    "azure",
+    "keyvault",
+    "secret-management"
+  ],
   "license": "Apache-2.0"
 }
